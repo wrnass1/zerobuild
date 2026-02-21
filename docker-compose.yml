@@ -1,0 +1,31 @@
+# Запуск Auth Service + PostgreSQL
+# Swagger: http://localhost:8000/docs
+services:
+  auth-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: auth_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - auth_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 5
+
+  auth-service:
+    build: ./auth_service
+    ports:
+      - "8000:8000"
+    environment:
+      AUTH_DATABASE_URL: postgresql+asyncpg://postgres:postgres@auth-db:5432/auth_db
+    depends_on:
+      auth-db:
+        condition: service_healthy
+
+volumes:
+  auth_pg_data:
