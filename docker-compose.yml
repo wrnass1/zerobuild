@@ -1,5 +1,6 @@
-# Запуск Auth Service + PostgreSQL
-# Swagger: http://localhost:8000/docs
+# Запуск Auth Service + Matching Service + PostgreSQL
+# Auth Swagger:     http://localhost:8000/docs
+# Matching Swagger: http://localhost:8001/docs
 services:
   auth-db:
     image: postgres:16-alpine
@@ -27,5 +28,32 @@ services:
       auth-db:
         condition: service_healthy
 
+  matching-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: matching_db
+    ports:
+      - "5434:5432"
+    volumes:
+      - matching_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 5
+
+  matching-service:
+    build: ./matching_service
+    ports:
+      - "8001:8001"
+    environment:
+      MATCH_DATABASE_URL: postgresql+asyncpg://postgres:postgres@matching-db:5432/matching_db
+    depends_on:
+      matching-db:
+        condition: service_healthy
+
 volumes:
   auth_pg_data:
+  matching_pg_data:
