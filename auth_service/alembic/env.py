@@ -1,9 +1,17 @@
 from logging.config import fileConfig
+import os
+import sys
+
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from alembic import context
+
+# Добавляем корень auth_service в PYTHONPATH, чтобы работали импорты config, database, models
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
 
 from config import settings
 from database import Base
