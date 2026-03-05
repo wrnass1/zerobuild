@@ -1,4 +1,6 @@
 """Эндпоинты: профиль пользователя."""
+from typing import List
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -38,6 +40,33 @@ async def get_profile(
         tech_stack=user.tech_stack or [],
         projects=user.projects or [],
     )
+
+
+@router.get(
+    "/profiles",
+    response_model=List[ProfileResponse],
+    summary="Список профилей (для Matching Service)",
+    description="Возвращает список всех пользователей с профилями для сервиса подбора.",
+    tags=["Профиль", "Internal"],
+)
+async def list_profiles(
+    db: AsyncSession = Depends(get_db),
+):
+    """Список всех профилей пользователей (для Matching Service)."""
+    result = await db.execute(select(User).order_by(User.id))
+    users = result.scalars().all()
+    return [
+        ProfileResponse(
+            id=user.id,
+            email=user.email,
+            name=user.name,
+            level=user.level.value if user.level else None,
+            description=user.description,
+            tech_stack=user.tech_stack or [],
+            projects=user.projects or [],
+        )
+        for user in users
+    ]
 
 
 @router.put(
