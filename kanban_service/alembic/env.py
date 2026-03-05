@@ -43,7 +43,7 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
-async def run_async_migrations(connection: Connection) -> None:
+def do_run_migrations(connection: Connection) -> None:
     context.configure(
         connection=connection,
         target_metadata=target_metadata,
@@ -61,7 +61,9 @@ async def run_migrations_online() -> None:
     )
 
     async with connectable.connect() as connection:
-        await run_async_migrations(connection)
+        await connection.run_sync(do_run_migrations)
+
+    await connectable.dispose()
 
 
 if context.is_offline_mode():
