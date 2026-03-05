@@ -1,5 +1,6 @@
-# Запуск Auth Service + Matching Service + PostgreSQL
-# Auth Swagger:     http://localhost:8000/docs
+# Запуск всех сервисов + Gateway
+# Gateway:         http://localhost:8080 (единая точка входа: /api/auth, /api/ideas, /api/kanban, /api/match)
+# Auth Swagger:    http://localhost:8000/docs
 # Matching Swagger: http://localhost:8001/docs
 services:
   auth-db:
@@ -54,6 +55,71 @@ services:
       matching-db:
         condition: service_healthy
 
+  idea-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: idea_db
+    ports:
+      - "5435:5432"
+    volumes:
+      - idea_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 5
+
+  idea-service:
+    build: ./idea_service
+    environment:
+      IDEA_DATABASE_URL: postgresql+asyncpg://postgres:postgres@idea-db:5432/idea_db
+    depends_on:
+      idea-db:
+        condition: service_healthy
+
+  kanban-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: kanban_db
+    ports:
+      - "5436:5432"
+    volumes:
+      - kanban_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 5
+
+  kanban-service:
+    build: ./kanban_service
+    environment:
+      KANBAN_DATABASE_URL: postgresql+asyncpg://postgres:postgres@kanban-db:5432/kanban_db
+    depends_on:
+      kanban-db:
+        condition: service_healthy
+
+  gateway:
+    build: ./gateway
+    ports:
+      - "8080:8080"
+    environment:
+      GATEWAY_AUTH_URL: http://auth-service:8000
+      GATEWAY_IDEAS_URL: http://idea-service:8002
+      GATEWAY_KANBAN_URL: http://kanban-service:8003
+      GATEWAY_MATCHING_URL: http://matching-service:8001
+    depends_on:
+      - auth-service
+      - idea-service
+      - kanban-service
+      - matching-service
+
 volumes:
   auth_pg_data:
   matching_pg_data:
+  idea_pg_data:
+  kanban_pg_data:

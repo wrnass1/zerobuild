@@ -1,0 +1,127 @@
+"""
+Сбор и слияние OpenAPI-спецификаций всех сервисов для единого Swagger UI.
+"""
+import asyncio
+import copy
+from typing import Any
+
+import httpx
+
+# (proxy_prefix, merge_path_prefix, schema_prefix) для каждого сервиса.
+# merge_path_prefix — префикс в объединённой OpenAPI (чтобы не дублировать путь: у ideas в спеке уже /ideas).
+SERVICE_PREFIXES = [
+    ("/api/auth", "/api/auth", "Auth_"),
+    ("/api/ideas", "/api", "Ideas_"),
+    ("/api/kanban", "/api/kanban", "Kanban_"),
+    ("/api/match", "/api/match", "Match_"),
+]
+
+
+def _prefix_refs(obj: Any, schema_prefix: str) -> Any:
+    """Рекурсивно заменяет $ref на префиксированные имена схем."""
+    if isinstance(obj, dict):
+        if "$ref" in obj and isinstance(obj["$ref"], str):
+            ref = obj["$ref"]
+            if ref.startswith("#/components/schemas/"):
+                name = ref.split("/")[-1]
+                if not name.startswith(("Auth_", "Ideas_", "Kanban_", "Match_")):
+                    return {"$ref": f"#/components/schemas/{schema_prefix}{name}"}
+            return obj
+        return {k: _prefix_refs(v, schema_prefix) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_prefix_refs(item, schema_prefix) for item in obj]
+    return obj
+
+
+def _transform_spec(spec: dict, path_prefix: str, schema_prefix: str) -> tuple[dict, dict]:
+    """
+    Преобразует спецификацию: префикс путей и переименование схем.
+    Возвращает (paths, components).
+    """
+    paths = {}
+    raw_paths = spec.get("paths", {})
+    for path_key, path_item in raw_paths.items():
+        new_path = path_prefix + (path_key if path_key != "/" else "")
+        paths[new_path] = _prefix_refs(copy.deepcopy(path_item), schema_prefix)
+
+    components = spec.get("components", {}) or {}
+    schemas = components.get("schemas", {}) or {}
+    new_schemas = {}
+    for name, schema_obj in schemas.items():
+        new_name = schema_prefix + name
+        new_schemas[new_name] = _prefix_refs(copy.deepcopy(schema_obj), schema_prefix)
+    return paths, new_schemas
+
+
+async def fetch_openapi(
+    client: httpx.AsyncClient,
+    base_url: str,
+    *,
+    retries: int = 5,
+    retry_delay: float = 2.0,
+) -> dict | None:
+    """Загружает openapi.json с сервиса (с повторами при недоступности)."""
+    url = f"{base_url.rstrip('/')}/openapi.json"
+    for _ in range(retries):
+        try:
+            resp = await client.get(url, timeout=5.0)
+            if resp.status_code == 200:
+                return resp.json()
+        except Exception:
+            pass
+        await asyncio.sleep(retry_delay)
+    return None
+
+
+# Пути, требующие JWT (подстрока в path)
+PATHS_REQUIRING_AUTH = ("/api/auth/profile",)
+
+
+def _add_security_to_paths(paths: dict) -> None:
+    """Добавляет security: BearerAuth к эндпоинтам, которые требуют токен."""
+    security = [{"BearerAuth": []}]
+    for path_key, path_item in paths.items():
+        if any(part in path_key for part in PATHS_REQUIRING_AUTH):
+            for method in ("get", "put", "post", "delete", "patch"):
+                if method in path_item and isinstance(path_item[method], dict):
+                    path_item[method]["security"] = security
+
+
+def merge_specs(specs: list[tuple[dict | None, str, str]]) -> dict:
+    """
+    Объединяет несколько OpenAPI-спецификаций.
+    specs: список (spec_dict, path_prefix, schema_prefix).
+    """
+    merged_paths = {}
+    merged_schemas = {}
+    for spec, path_prefix, schema_prefix in specs:
+        if spec is None:
+            continue
+        paths, schemas = _transform_spec(spec, path_prefix, schema_prefix)
+        merged_paths.update(paths)
+        for name, schema in schemas.items():
+            if name not in merged_schemas:
+                merged_schemas[name] = schema
+
+    _add_security_to_paths(merged_paths)
+
+    return {
+        "openapi": "3.1.0",
+        "info": {
+            "title": "API Gateway — все сервисы",
+            "description": "Объединённая документация: Auth, Ideas, Kanban, Matching.",
+            "version": "1.0.0",
+        },
+        "paths": merged_paths,
+        "components": {
+            "schemas": merged_schemas,
+            "securitySchemes": {
+                "BearerAuth": {
+                    "type": "http",
+                    "scheme": "bearer",
+                    "bearerFormat": "JWT",
+                    "description": "JWT из POST /api/auth/login или POST /api/auth/register",
+                }
+            },
+        },
+    }
