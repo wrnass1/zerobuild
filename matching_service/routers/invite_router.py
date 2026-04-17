@@ -1,22 +1,12 @@
-"""Эндпоинты управления идеями, кандидатами и приглашениями."""
+"""Эндпоинт отправки приглашения (stateless)."""
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth_deps import get_current_user_id
-from database import get_db
-from idea_client import IdeaServiceError, fetch_idea
-from models import Candidate, Invite, InviteStatus
-from schemas import (
-    IdeaCreate,
-    IdeaResponse,
-    CandidateCreate,
-    CandidateResponse,
-    InviteCreate,
-    InviteResponse,
-)
+from config import settings
+from schemas import InviteCreate, InviteResponse, InviteStatusEnum
 
-router = APIRouter(prefix="", tags=["Ideas & Invites"])
+router = APIRouter(prefix="", tags=["Invites"])
 
 
 def _ensure_inviter_is_idea_owner(idea_payload: dict, user_id: int) -> None:
@@ -28,53 +18,49 @@ def _ensure_inviter_is_idea_owner(idea_payload: dict, user_id: int) -> None:
         )
 
 
-@router.post(
-    "/ideas",
-    response_model=IdeaResponse,
-    status_code=status.HTTP_201_CREATED,
-    summary="Создать идею для матчинга",
-)
-async def create_idea(
-    body: IdeaCreate,
-    _user_id: int = Depends(get_current_user_id),
-    db: AsyncSession = Depends(get_db),
-):
-    idea = Idea(
-        title=body.title,
-        description=body.description,
-        required_stack=body.required_stack,
-    )
-    db.add(idea)
-    await db.flush()
-    return IdeaResponse.model_validate(idea)
-
-
-@router.post(
-    "/candidates",
-    response_model=CandidateResponse,
-    status_code=status.HTTP_201_CREATED,
-    summary="Создать кандидата для матчинга",
-)
-async def create_candidate(
-    body: CandidateCreate,
-    user_id: int = Depends(get_current_user_id),
-    db: AsyncSession = Depends(get_db),
-):
-    if body.user_id != user_id:
+async def _fetch_idea_payload(idea_id: int) -> dict:
+    url = f"{settings.ideas_url.rstrip('/')}/ideas/{idea_id}"
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            resp = await client.get(url)
+        except httpx.RequestError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Idea Service недоступен: {exc}",
+            ) from exc
+    if resp.status_code == status.HTTP_404_NOT_FOUND:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="user_id в теле запроса должен совпадать с авторизованным пользователем",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Идея не найдена",
         )
-    candidate = Candidate(
-        user_id=body.user_id,
-        name=body.name,
-        level=body.level,  # type: ignore[arg-type]
-        tech_stack=body.tech_stack,
-        description=body.description,
-    )
-    db.add(candidate)
-    await db.flush()
-    return CandidateResponse.model_validate(candidate)
+    if resp.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Ошибка Idea Service: {resp.status_code}",
+        )
+    return resp.json()
+
+
+async def _ensure_user_exists(user_id: int) -> None:
+    url = f"{settings.auth_url.rstrip('/')}/profiles/{user_id}"
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            resp = await client.get(url)
+        except httpx.RequestError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Auth Service недоступен: {exc}",
+            ) from exc
+    if resp.status_code == status.HTTP_404_NOT_FOUND:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Пользователь не найден",
+        )
+    if resp.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Ошибка Auth Service: {resp.status_code}",
+        )
 
 
 @router.post(
@@ -82,41 +68,22 @@ async def create_candidate(
     response_model=InviteResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Отправить приглашение кандидату",
-    description="Создаёт приглашение кандидату в указанный проект/идею.",
+    description=(
+        "Stateless-приглашение: проверяет идею в Idea Service и пользователя в Auth Service, "
+        "состояние не хранится. candidate_id — это user_id из Auth."
+    ),
 )
 async def create_invite(
     body: InviteCreate,
     user_id: int = Depends(get_current_user_id),
-    db: AsyncSession = Depends(get_db),
 ):
-    try:
-        idea_payload = await fetch_idea(body.idea_id)
-    except IdeaServiceError as e:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Idea Service: {e!s}",
-        ) from e
-    if not idea_payload:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Идея не найдена",
-        )
+    idea_payload = await _fetch_idea_payload(body.idea_id)
     _ensure_inviter_is_idea_owner(idea_payload, user_id)
+    await _ensure_user_exists(body.candidate_id)
 
-    candidate_result = await db.execute(select(Candidate).where(Candidate.id == body.candidate_id))
-    candidate = candidate_result.scalar_one_or_none()
-    if not candidate:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Кандидат не найден",
-        )
-
-    invite = Invite(
+    return InviteResponse(
+        id=0,
         idea_id=body.idea_id,
-        candidate_id=candidate.id,
-        status=InviteStatus.PENDING,
+        candidate_id=body.candidate_id,
+        status=InviteStatusEnum.PENDING,
     )
-    db.add(invite)
-    await db.flush()
-    return InviteResponse.model_validate(invite)
-

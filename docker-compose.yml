@@ -33,33 +33,17 @@ services:
       auth-db:
         condition: service_healthy
 
-  matching-db:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: matching_db
-    ports:
-      - "5434:5432"
-    volumes:
-      - matching_pg_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 3s
-      timeout: 3s
-      retries: 5
-
   matching-service:
     build: ./matching_service
     ports:
       - "8001:8001"
     environment:
-      MATCH_DATABASE_URL: postgresql+asyncpg://postgres:postgres@matching-db:5432/matching_db
-      MATCH_IDEA_SERVICE_URL: http://idea-service:8002
+      MATCH_AUTH_URL: http://auth-service:8000
+      MATCH_IDEAS_URL: http://idea-service:8002
       MATCH_JWT_SECRET_KEY: ${PLATFORM_JWT_SECRET:-your-secret-key-change-in-production}
     depends_on:
-      matching-db:
-        condition: service_healthy
+      auth-service:
+        condition: service_started
       idea-service:
         condition: service_started
 
@@ -137,6 +121,5 @@ services:
 
 volumes:
   auth_pg_data:
-  matching_pg_data:
   idea_pg_data:
   kanban_pg_data:

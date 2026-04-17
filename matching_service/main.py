@@ -1,41 +1,27 @@
 """
-Matching Service — подбор участников по стеку для идей.
+Matching Service — stateless-сервис подбора участников по стеку для идей.
 
-Основные эндпоинты:
-- GET  /match/{idea_id} — вернуть кандидатов с коэффициентом совпадения
-- POST /invite         — создать приглашение кандидату в идею
-
-Дополнительно:
-- POST /ideas      — завести идею (название + требуемый стек)
-- POST /candidates — завести кандидата (user_id + стек)
+Особенности:
+- не хранит собственные данные и не использует БД;
+- получает идеи из Idea Service;
+- получает кандидатов из Auth Service (профили пользователей);
+- рассчитывает коэффициент совпадения и возвращает отсортированный список.
 
 Документация API: Swagger UI — /docs, ReDoc — /redoc.
 """
-from contextlib import asynccontextmanager
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from database import init_db
-import models  # noqa: F401 — регистрируем модели до create_all
 from routers import match_router, invite_router
-
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Создание таблиц при старте."""
-    await init_db()
-    yield
 
 
 app = FastAPI(
     title="Matching Service",
     description=(
         "Сервис подбора участников по стеку технологий. "
-        "MVP-алгоритм — процент совпадения требуемого стека идеи и стека кандидата."
+        "Stateless: использует Idea Service и Auth Service как источники данных."
     ),
     version="1.0.0",
-    lifespan=lifespan,
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_url="/openapi.json",
