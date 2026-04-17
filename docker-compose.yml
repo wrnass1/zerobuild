@@ -1,7 +1,10 @@
 # Запуск всех сервисов + Gateway
+# Общий секрет JWT: PLATFORM_JWT_SECRET (должен совпадать у auth, idea, kanban, matching)
 # Gateway:         http://localhost:8080 (единая точка входа: /api/auth, /api/ideas, /api/kanban, /api/match)
 # Auth Swagger:    http://localhost:8000/docs
 # Matching Swagger: http://localhost:8001/docs
+# Ideas Swagger:   http://localhost:8002/docs
+# Kanban Swagger:  http://localhost:8003/docs
 services:
   auth-db:
     image: postgres:16-alpine
@@ -25,6 +28,7 @@ services:
       - "8000:8000"
     environment:
       AUTH_DATABASE_URL: postgresql+asyncpg://postgres:postgres@auth-db:5432/auth_db
+      AUTH_SECRET_KEY: ${PLATFORM_JWT_SECRET:-your-secret-key-change-in-production}
     depends_on:
       auth-db:
         condition: service_healthy
@@ -33,6 +37,15 @@ services:
     build: ./matching_service
     ports:
       - "8001:8001"
+    environment:
+      MATCH_AUTH_URL: http://auth-service:8000
+      MATCH_IDEAS_URL: http://idea-service:8002
+      MATCH_JWT_SECRET_KEY: ${PLATFORM_JWT_SECRET:-your-secret-key-change-in-production}
+    depends_on:
+      auth-service:
+        condition: service_started
+      idea-service:
+        condition: service_started
 
   idea-db:
     image: postgres:16-alpine
@@ -52,8 +65,11 @@ services:
 
   idea-service:
     build: ./idea_service
+    ports:
+      - "8002:8002"
     environment:
       IDEA_DATABASE_URL: postgresql+asyncpg://postgres:postgres@idea-db:5432/idea_db
+      IDEA_JWT_SECRET_KEY: ${PLATFORM_JWT_SECRET:-your-secret-key-change-in-production}
     depends_on:
       idea-db:
         condition: service_healthy
@@ -76,11 +92,17 @@ services:
 
   kanban-service:
     build: ./kanban_service
+    ports:
+      - "8003:8003"
     environment:
       KANBAN_DATABASE_URL: postgresql+asyncpg://postgres:postgres@kanban-db:5432/kanban_db
+      KANBAN_IDEA_SERVICE_URL: http://idea-service:8002
+      KANBAN_JWT_SECRET_KEY: ${PLATFORM_JWT_SECRET:-your-secret-key-change-in-production}
     depends_on:
       kanban-db:
         condition: service_healthy
+      idea-service:
+        condition: service_started
 
   gateway:
     build: ./gateway

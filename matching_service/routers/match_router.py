@@ -2,10 +2,11 @@
 from typing import List
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
+from auth_deps import get_current_user_id
 from config import settings
-from schemas import MatchResponse, MatchItem
+from schemas import MatchItem, MatchResponse
 
 router = APIRouter(prefix="", tags=["Matching"])
 
@@ -35,11 +36,7 @@ async def _fetch_idea(idea_id: int) -> dict:
 
 
 async def _fetch_candidates() -> List[dict]:
-    """Получить список кандидатов из Auth Service.
-
-    В качестве кандидатов рассматриваются все пользователи (их профили).
-    Ожидается эндпоинт Auth Service: GET /profiles (список профилей).
-    """
+    """Список профилей из Auth Service (GET /profiles)."""
     url = f"{settings.auth_url.rstrip('/')}/profiles"
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
@@ -70,13 +67,7 @@ def _calc_match_score(
     user_level: str | None,
     user_projects_count: int,
 ) -> tuple[int, List[str], List[str]]:
-    """Расширенный алгоритм совпадения стека/уровня.
-
-    Базовый принцип:
-    - 0–80%: процент пересечения стеков;
-    - до +15%: соответствие уровня пользователя сложности идеи;
-    - до -10%: штраф за сильную загруженность (много проектов).
-    """
+    """Расширенный алгоритм совпадения стека/уровня."""
     required = [t.lower() for t in required_stack]
     candidate = [t.lower() for t in tech_stack]
     if not required:
@@ -87,20 +78,17 @@ def _calc_match_score(
 
     base_score = int(80 * len(overlap) / len(required))
 
-    # Соответствие уровня сложности
     level_bonus = 0
     if user_level and idea_complexity:
         lvl = user_level.lower()
         cmpx = idea_complexity.lower()
         if cmpx == "low":
-            # Подойдут и junior, и middle
             level_bonus = 10
         elif cmpx == "medium":
             level_bonus = 15 if lvl == "middle" else 5
         elif cmpx == "high":
             level_bonus = 15 if lvl == "middle" else 0
 
-    # Штраф за высокую загруженность (много проектов)
     busy_penalty = 0
     if user_projects_count >= 3:
         busy_penalty = 10
@@ -116,13 +104,14 @@ def _calc_match_score(
     response_model=MatchResponse,
     summary="Подбор кандидатов для идеи",
     description=(
-        "Stateless-подбор кандидатов: идея берётся из Idea Service, кандидаты — из Auth Service. "
+        "Stateless-подбор: идея из Idea Service, кандидаты — профили из Auth Service. "
         "Результат отсортирован по коэффициенту совпадения стека и уровня."
     ),
 )
 async def match_candidates_for_idea(
     idea_id: int,
     limit: int = Query(10, ge=1, le=100, description="Максимальное количество кандидатов в ответе"),
+    _user_id: int = Depends(get_current_user_id),
 ):
     """Подбор кандидатов по стеку и уровню сложности идеи."""
     idea = await _fetch_idea(idea_id)
@@ -130,6 +119,8 @@ async def match_candidates_for_idea(
 
     required_stack: List[str] = idea.get("required_stack") or []
     idea_complexity = idea.get("complexity")
+    if hasattr(idea_complexity, "value"):
+        idea_complexity = idea_complexity.value
 
     scored: List[MatchItem] = []
     for profile in candidates:
@@ -146,10 +137,11 @@ async def match_candidates_for_idea(
         )
         if score == 0:
             continue
+        uid = profile["id"]
         scored.append(
             MatchItem(
-                candidate_id=profile["id"],
-                user_id=profile["id"],
+                candidate_id=uid,
+                user_id=uid,
                 name=profile.get("name"),
                 level=level,  # type: ignore[arg-type]
                 score=score,
@@ -160,5 +152,3 @@ async def match_candidates_for_idea(
 
     scored.sort(key=lambda x: x.score, reverse=True)
     return MatchResponse(idea_id=idea["id"], matches=scored[:limit])
-
-

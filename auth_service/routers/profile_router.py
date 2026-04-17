@@ -69,6 +69,35 @@ async def list_profiles(
     ]
 
 
+@router.get(
+    "/profiles/{profile_user_id}",
+    response_model=ProfileResponse,
+    summary="Профиль по ID пользователя",
+    description="Для внутренних вызовов (например, Matching /invite).",
+    tags=["Профиль", "Internal"],
+)
+async def get_profile_by_id(
+    profile_user_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(User).where(User.id == profile_user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Пользователь не найден",
+        )
+    return ProfileResponse(
+        id=user.id,
+        email=user.email,
+        name=user.name,
+        level=user.level.value if user.level else None,
+        description=user.description,
+        tech_stack=user.tech_stack or [],
+        projects=user.projects or [],
+    )
+
+
 @router.put(
     "/profile",
     response_model=ProfileResponse,

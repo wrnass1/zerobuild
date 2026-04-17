@@ -51,7 +51,7 @@ class CandidateResponse(CandidateCreate):
 class MatchItem(BaseModel):
     """Один кандидат в результате матчинга."""
 
-    candidate_id: int = Field(..., description="ID кандидата в Matching Service")
+    candidate_id: int = Field(..., description="Совпадает с user_id в Auth Service")
     user_id: int = Field(..., description="ID пользователя из Auth Service")
     name: Optional[str] = Field(None, description="Имя кандидата")
     level: Optional[UserLevelEnum] = Field(None, description="Уровень")
@@ -70,8 +70,8 @@ class MatchResponse(BaseModel):
 class InviteCreate(BaseModel):
     """Запрос на отправку приглашения."""
 
-    idea_id: int = Field(..., description="ID идеи")
-    candidate_id: int = Field(..., description="ID кандидата в Matching Service")
+    idea_id: int = Field(..., description="ID идеи в Idea Service")
+    candidate_id: int = Field(..., description="user_id приглашаемого в Auth Service")
 
 
 class InviteStatusEnum(str, Enum):
