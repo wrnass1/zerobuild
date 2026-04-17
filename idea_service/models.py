@@ -28,6 +28,7 @@ class Idea(Base):
     __tablename__ = "ideas"
 
     id = Column(Integer, primary_key=True, index=True)
+    owner_id = Column(Integer, nullable=True, index=True)
     title = Column(String(255), nullable=False, index=True)
     description = Column(Text, nullable=True)
     required_stack = Column(ARRAY(String), nullable=False, default=list)

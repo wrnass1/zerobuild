@@ -47,6 +47,7 @@ class IdeaResponse(BaseModel):
     """Идея в ответе."""
 
     id: int
+    owner_id: Optional[int] = Field(None, description="ID владельца (Auth Service)")
     title: str
     description: Optional[str] = None
     required_stack: List[str]

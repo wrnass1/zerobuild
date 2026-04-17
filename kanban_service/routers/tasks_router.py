@@ -3,6 +3,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from auth_deps import get_current_user_id
+from board_access import require_board_access
 from database import get_db
 from models import Task, BoardColumn
 from schemas import TaskCreate, TaskUpdate, TaskResponse
@@ -25,9 +27,11 @@ router = APIRouter(prefix="/tasks", tags=["Tasks"])
 )
 async def create_task(
     body: TaskCreate,
+    user_id: int = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
     """Создание задачи в указанной колонке доски."""
+    await require_board_access(db, body.board_id, user_id)
     col_result = await db.execute(
         select(BoardColumn).where(
             BoardColumn.id == body.column_id,
@@ -68,6 +72,7 @@ async def create_task(
 async def update_task(
     task_id: int,
     body: TaskUpdate,
+    user_id: int = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
     """Обновление задачи (колонка, исполнитель, название, описание, дедлайн)."""
@@ -78,6 +83,7 @@ async def update_task(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Задача не найдена",
         )
+    await require_board_access(db, task.board_id, user_id)
     data = body.model_dump(exclude_unset=True)
     if "column_id" in data and data["column_id"] is not None:
         col_result = await db.execute(
@@ -111,6 +117,7 @@ async def update_task(
 )
 async def get_task(
     task_id: int,
+    user_id: int = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
     """Получение одной задачи."""
@@ -121,4 +128,5 @@ async def get_task(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Задача не найдена",
         )
+    await require_board_access(db, task.board_id, user_id)
     return task

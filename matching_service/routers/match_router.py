@@ -5,8 +5,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from auth_deps import get_current_user_id
 from database import get_db
-from models import Idea, Candidate
+from idea_client import IdeaServiceError, fetch_idea
+from models import Candidate
 from schemas import MatchResponse, MatchItem
 
 router = APIRouter(prefix="", tags=["Matching"])
@@ -33,23 +35,30 @@ def _calc_match_score(required_stack: List[str], tech_stack: List[str]) -> tuple
 async def match_candidates_for_idea(
     idea_id: int,
     limit: int = Query(10, ge=1, le=100, description="Максимальное количество кандидатов в ответе"),
+    _user_id: int = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
     """Подбор кандидатов по стеку для указанной идеи."""
-    idea_result = await db.execute(select(Idea).where(Idea.id == idea_id))
-    idea = idea_result.scalar_one_or_none()
-    if not idea:
+    try:
+        idea_payload = await fetch_idea(idea_id)
+    except IdeaServiceError as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Idea Service: {e!s}",
+        ) from e
+    if not idea_payload:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Идея не найдена",
         )
+    required_stack = idea_payload.get("required_stack") or []
 
     candidates_result = await db.execute(select(Candidate))
     candidates = candidates_result.scalars().all()
 
     scored: List[MatchItem] = []
     for candidate in candidates:
-        score, overlap, missing = _calc_match_score(idea.required_stack or [], candidate.tech_stack or [])
+        score, overlap, missing = _calc_match_score(required_stack, candidate.tech_stack or [])
         if score == 0:
             continue
         scored.append(
@@ -65,5 +74,5 @@ async def match_candidates_for_idea(
         )
 
     scored.sort(key=lambda x: x.score, reverse=True)
-    return MatchResponse(idea_id=idea.id, matches=scored[:limit])
+    return MatchResponse(idea_id=idea_id, matches=scored[:limit])
 

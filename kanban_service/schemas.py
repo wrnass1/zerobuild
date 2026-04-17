@@ -48,6 +48,7 @@ class BoardResponse(BaseModel):
     """Доска в ответе."""
 
     id: int
+    owner_id: Optional[int] = Field(None, description="ID владельца (Auth Service)")
     name: str
     project_id: Optional[int] = None
     idea_id: Optional[int] = None

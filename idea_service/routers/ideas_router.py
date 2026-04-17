@@ -5,11 +5,20 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from auth_deps import get_current_user_id
 from database import get_db
 from models import Idea, IdeaStatus, ComplexityLevel
 from schemas import IdeaCreate, IdeaUpdate, IdeaResponse, IdeaStatusEnum, ComplexityLevelEnum
 
 router = APIRouter(prefix="/ideas", tags=["Ideas"])
+
+
+def _ensure_can_modify_idea(idea: Idea, user_id: int) -> None:
+    if idea.owner_id is not None and idea.owner_id != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Нет прав на изменение этой идеи",
+        )
 
 
 @router.get(
@@ -63,10 +72,12 @@ async def list_ideas(
 )
 async def create_idea(
     body: IdeaCreate,
+    user_id: int = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
     """Создание новой идеи."""
     idea = Idea(
+        owner_id=user_id,
         title=body.title,
         description=body.description,
         required_stack=body.required_stack,
@@ -121,6 +132,7 @@ async def update_idea(
     idea_id: int,
     body: IdeaUpdate,
     db: AsyncSession = Depends(get_db),
+    user_id: int = Depends(get_current_user_id),
 ):
     """Обновление идеи (частичное)."""
     result = await db.execute(select(Idea).where(Idea.id == idea_id))
@@ -130,6 +142,7 @@ async def update_idea(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Идея не найдена",
         )
+    _ensure_can_modify_idea(idea, user_id)
     data = body.model_dump(exclude_unset=True)
     if "status" in data and data["status"] is not None:
         data["status"] = IdeaStatus(data["status"].value)
@@ -156,6 +169,7 @@ async def update_idea(
 async def delete_idea(
     idea_id: int,
     db: AsyncSession = Depends(get_db),
+    user_id: int = Depends(get_current_user_id),
 ):
     """Удаление идеи."""
     result = await db.execute(select(Idea).where(Idea.id == idea_id))
@@ -165,5 +179,6 @@ async def delete_idea(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Идея не найдена",
         )
+    _ensure_can_modify_idea(idea, user_id)
     await db.delete(idea)
     return None

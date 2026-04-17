@@ -12,6 +12,7 @@ class Board(Base):
     __tablename__ = "boards"
 
     id = Column(Integer, primary_key=True, index=True)
+    owner_id = Column(Integer, nullable=True, index=True)
     name = Column(String(255), nullable=False)
     project_id = Column(Integer, nullable=True, index=True)
     idea_id = Column(Integer, nullable=True, index=True)

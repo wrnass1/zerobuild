@@ -52,10 +52,10 @@ class Invite(Base):
     __tablename__ = "invites"
 
     id = Column(Integer, primary_key=True, index=True)
-    idea_id = Column(Integer, ForeignKey("ideas.id"), nullable=False)
+    # ID идеи в Idea Service (каталог), не FK на локальную таблицу ideas
+    idea_id = Column(Integer, nullable=False, index=True)
     candidate_id = Column(Integer, ForeignKey("candidates.id"), nullable=False)
     status = Column(Enum(InviteStatus), nullable=False, default=InviteStatus.PENDING)
 
-    idea = relationship("Idea")
     candidate = relationship("Candidate")
 

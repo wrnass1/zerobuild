@@ -3,8 +3,10 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from auth_deps import get_current_user_id
 from database import get_db
-from models import Idea, Candidate, Invite, InviteStatus
+from idea_client import IdeaServiceError, fetch_idea
+from models import Candidate, Invite, InviteStatus
 from schemas import (
     IdeaCreate,
     IdeaResponse,
@@ -17,6 +19,15 @@ from schemas import (
 router = APIRouter(prefix="", tags=["Ideas & Invites"])
 
 
+def _ensure_inviter_is_idea_owner(idea_payload: dict, user_id: int) -> None:
+    owner = idea_payload.get("owner_id")
+    if owner is not None and owner != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Приглашать кандидатов может только владелец идеи",
+        )
+
+
 @router.post(
     "/ideas",
     response_model=IdeaResponse,
@@ -25,6 +36,7 @@ router = APIRouter(prefix="", tags=["Ideas & Invites"])
 )
 async def create_idea(
     body: IdeaCreate,
+    _user_id: int = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
     idea = Idea(
@@ -45,8 +57,14 @@ async def create_idea(
 )
 async def create_candidate(
     body: CandidateCreate,
+    user_id: int = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
+    if body.user_id != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="user_id в теле запроса должен совпадать с авторизованным пользователем",
+        )
     candidate = Candidate(
         user_id=body.user_id,
         name=body.name,
@@ -68,15 +86,22 @@ async def create_candidate(
 )
 async def create_invite(
     body: InviteCreate,
+    user_id: int = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
-    idea_result = await db.execute(select(Idea).where(Idea.id == body.idea_id))
-    idea = idea_result.scalar_one_or_none()
-    if not idea:
+    try:
+        idea_payload = await fetch_idea(body.idea_id)
+    except IdeaServiceError as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Idea Service: {e!s}",
+        ) from e
+    if not idea_payload:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Идея не найдена",
         )
+    _ensure_inviter_is_idea_owner(idea_payload, user_id)
 
     candidate_result = await db.execute(select(Candidate).where(Candidate.id == body.candidate_id))
     candidate = candidate_result.scalar_one_or_none()
@@ -87,7 +112,7 @@ async def create_invite(
         )
 
     invite = Invite(
-        idea_id=idea.id,
+        idea_id=body.idea_id,
         candidate_id=candidate.id,
         status=InviteStatus.PENDING,
     )
