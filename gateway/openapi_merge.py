@@ -73,18 +73,31 @@ async def fetch_openapi(
     return None
 
 
-# Пути, требующие JWT (подстрока в path)
-PATHS_REQUIRING_AUTH = ("/api/auth/profile",)
-
-
 def _add_security_to_paths(paths: dict) -> None:
-    """Добавляет security: BearerAuth к эндпоинтам, которые требуют токен."""
+    """
+    Добавляет security: BearerAuth к эндпоинтам, которые требуют токен.
+
+    Важно: это влияет только на Swagger (какие запросы он отправляет с Authorization),
+    а не на фактическую защиту эндпоинтов в сервисах.
+    """
     security = [{"BearerAuth": []}]
+    protected_rules: list[tuple[str, set[str]]] = [
+        ("/api/auth/profile", {"get", "put", "post", "delete", "patch"}),
+        # Ideas: защищаем операции изменения (create/update/delete)
+        ("/api/ideas", {"post", "put", "delete", "patch"}),
+        # Kanban: как минимум все операции изменения
+        ("/api/kanban", {"post", "put", "delete", "patch"}),
+        # Matching: если будет защита — включаем write-методы
+        ("/api/match", {"post", "put", "delete", "patch"}),
+    ]
+
     for path_key, path_item in paths.items():
-        if any(part in path_key for part in PATHS_REQUIRING_AUTH):
-            for method in ("get", "put", "post", "delete", "patch"):
-                if method in path_item and isinstance(path_item[method], dict):
-                    path_item[method]["security"] = security
+        for prefix, methods in protected_rules:
+            if path_key.startswith(prefix):
+                for method in methods:
+                    if method in path_item and isinstance(path_item[method], dict):
+                        path_item[method]["security"] = security
+                break
 
 
 def merge_specs(specs: list[tuple[dict | None, str, str]]) -> dict:

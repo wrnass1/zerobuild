@@ -17,17 +17,19 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    idea_status = sa.Enum(
+    idea_status = postgresql.ENUM(
         "open",
         "in_progress",
         "done",
         name="ideastatus",
+        create_type=False,
     )
-    complexity_level = sa.Enum(
+    complexity_level = postgresql.ENUM(
         "low",
         "medium",
         "high",
         name="complexitylevel",
+        create_type=False,
     )
 
     idea_status.create(op.get_bind(), checkfirst=True)
@@ -78,13 +80,13 @@ def downgrade() -> None:
     op.drop_table("ideas")
 
     bind = op.get_bind()
-    complexity_level = sa.Enum(
+    complexity_level = postgresql.ENUM(
         "low",
         "medium",
         "high",
         name="complexitylevel",
     )
-    idea_status = sa.Enum(
+    idea_status = postgresql.ENUM(
         "open",
         "in_progress",
         "done",
