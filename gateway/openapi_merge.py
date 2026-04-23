@@ -81,14 +81,16 @@ def _add_security_to_paths(paths: dict) -> None:
     а не на фактическую защиту эндпоинтов в сервисах.
     """
     security = [{"BearerAuth": []}]
+    # В сервисах `kanban` и `matching` даже read-эндпоинты требуют JWT (Depends(get_current_user_id)),
+    # поэтому помечаем их целиком, иначе Swagger не прикрепит Authorization и будет "Not authenticated".
     protected_rules: list[tuple[str, set[str]]] = [
         ("/api/auth/profile", {"get", "put", "post", "delete", "patch"}),
-        # Ideas: защищаем операции изменения (create/update/delete)
+        # Ideas: read публичный, защищаем только операции изменения (create/update/delete)
         ("/api/ideas", {"post", "put", "delete", "patch"}),
-        # Kanban: как минимум все операции изменения
-        ("/api/kanban", {"post", "put", "delete", "patch"}),
-        # Matching: если будет защита — включаем write-методы
-        ("/api/match", {"post", "put", "delete", "patch"}),
+        # Kanban: read/write защищены
+        ("/api/kanban", {"get", "post", "put", "delete", "patch"}),
+        # Matching: read/write защищены
+        ("/api/match", {"get", "post", "put", "delete", "patch"}),
     ]
 
     for path_key, path_item in paths.items():
@@ -98,6 +100,36 @@ def _add_security_to_paths(paths: dict) -> None:
                     if method in path_item and isinstance(path_item[method], dict):
                         path_item[method]["security"] = security
                 break
+
+
+def _normalize_security_scheme_names(paths: dict) -> None:
+    """
+    FastAPI по умолчанию называет HTTPBearer-схему как `HTTPBearer`.
+    В gateway мы используем единое имя `BearerAuth`, поэтому приводим security-объекты к нему,
+    иначе Swagger не сможет сопоставить security requirement с components.securitySchemes.
+    """
+    for path_item in paths.values():
+        if not isinstance(path_item, dict):
+            continue
+        for op in path_item.values():
+            if not isinstance(op, dict):
+                continue
+            sec = op.get("security")
+            if not isinstance(sec, list):
+                continue
+            new_sec = []
+            changed = False
+            for req in sec:
+                if not isinstance(req, dict):
+                    new_sec.append(req)
+                    continue
+                if "HTTPBearer" in req and "BearerAuth" not in req:
+                    new_sec.append({"BearerAuth": req.get("HTTPBearer", [])})
+                    changed = True
+                else:
+                    new_sec.append(req)
+            if changed:
+                op["security"] = new_sec
 
 
 def merge_specs(specs: list[tuple[dict | None, str, str]]) -> dict:
@@ -117,6 +149,7 @@ def merge_specs(specs: list[tuple[dict | None, str, str]]) -> dict:
                 merged_schemas[name] = schema
 
     _add_security_to_paths(merged_paths)
+    _normalize_security_scheme_names(merged_paths)
 
     return {
         "openapi": "3.1.0",
