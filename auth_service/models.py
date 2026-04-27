@@ -1,7 +1,6 @@
 """Модели БД для Auth Service."""
 import enum
-from sqlalchemy import Column, Integer, String, Text, Enum
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB
+from sqlalchemy import Column, Integer, String, Text, Enum, JSON
 
 from database import Base
 
@@ -24,5 +23,6 @@ class User(Base):
     name = Column(String(255), nullable=True)
     level = Column(Enum(UserLevel), nullable=True, default=UserLevel.JUNIOR)
     description = Column(Text, nullable=True)
-    tech_stack = Column(ARRAY(String), nullable=True, default=list)
-    projects = Column(JSONB, nullable=True, default=list)
+    # Храним списки в JSON, чтобы модель была совместима с SQLite и Postgres.
+    tech_stack = Column(JSON, nullable=True, default=list)
+    projects = Column(JSON, nullable=True, default=list)

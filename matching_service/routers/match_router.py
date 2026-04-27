@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Эндпоинт подбора кандидатов для идеи (stateless, без БД)."""
 from typing import List
 

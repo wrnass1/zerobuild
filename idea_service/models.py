@@ -1,7 +1,6 @@
 """Модели БД для Idea Service."""
 import enum
-from sqlalchemy import Column, Integer, String, Text, Enum
-from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy import Column, Integer, String, Text, Enum, JSON
 
 from database import Base
 
@@ -31,7 +30,8 @@ class Idea(Base):
     owner_id = Column(Integer, nullable=True, index=True)
     title = Column(String(255), nullable=False, index=True)
     description = Column(Text, nullable=True)
-    required_stack = Column(ARRAY(String), nullable=False, default=list)
+    # Храним список в JSON, чтобы модель была совместима с SQLite и Postgres.
+    required_stack = Column(JSON, nullable=False, default=list)
     complexity = Column(Enum(ComplexityLevel), nullable=True)
     participants_count = Column(Integer, nullable=False, default=1)
     status = Column(Enum(IdeaStatus), nullable=False, default=IdeaStatus.OPEN)

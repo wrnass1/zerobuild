@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Запросы к Idea Service (каталог идей)."""
 import httpx
 

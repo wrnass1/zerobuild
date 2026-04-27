@@ -7,6 +7,8 @@ API Gateway — единая точка входа.
 - /api/kanban -> kanban-service:8003
 - /api/match  -> matching-service:8001
 """
+from __future__ import annotations
+
 import asyncio
 from contextlib import asynccontextmanager
 

@@ -1,6 +1,8 @@
 """
 Сбор и слияние OpenAPI-спецификаций всех сервисов для единого Swagger UI.
 """
+from __future__ import annotations
+
 import asyncio
 import copy
 from typing import Any
