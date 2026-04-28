@@ -1,0 +1,45 @@
+name: CI
+
+"on":
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  tests:
+    name: Tests (${{ matrix.service }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - auth_service
+          - idea_service
+          - kanban_service
+          - matching_service
+          - gateway
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: |
+            ${{ matrix.service }}/requirements.txt
+            ${{ matrix.service }}/requirements-dev.txt
+
+      - name: Install dependencies
+        working-directory: ${{ matrix.service }}
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Run tests
+        working-directory: ${{ matrix.service }}
+        run: |
+          python -m pytest -q
+
