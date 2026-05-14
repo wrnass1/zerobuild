@@ -56,3 +56,8 @@ app.include_router(tasks_router.router)
 async def health():
     """Проверка доступности сервиса."""
     return {"status": "ok", "service": "kanban"}
+
+
+from observability import setup_observability  # noqa: E402
+
+setup_observability(app, "kanban")

@@ -7,3 +7,5 @@ pydantic-settings==2.6.1
 alembic==1.13.3
 httpx==0.28.1
 python-jose[cryptography]==3.3.0
+prometheus-fastapi-instrumentator==7.0.0
+sentry-sdk[fastapi]==2.19.2

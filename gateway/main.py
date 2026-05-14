@@ -97,6 +97,9 @@ async def proxy(request: Request, path: str):
     if request.url.query:
         url += f"?{request.url.query}"
     forward_headers = {k: v for k, v in request.headers.items() if k.lower() != "host"}
+    cid = getattr(request.state, "correlation_id", None)
+    if cid:
+        forward_headers["X-Correlation-ID"] = cid
     body = await request.body()
     async with httpx.AsyncClient() as client:
         try:
@@ -142,3 +145,8 @@ async def refresh_openapi():
             specs.append((spec, merge_path_prefix, schema_prefix))
     _merged_openapi = merge_specs(specs)
     return {"status": "ok", "message": "OpenAPI обновлён, обновите страницу /docs"}
+
+
+from observability import setup_observability  # noqa: E402
+
+setup_observability(app, "gateway")

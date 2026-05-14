@@ -55,3 +55,8 @@ app.include_router(ideas_router.router)
 async def health():
     """Проверка доступности сервиса."""
     return {"status": "ok", "service": "ideas"}
+
+
+from observability import setup_observability  # noqa: E402
+
+setup_observability(app, "ideas")

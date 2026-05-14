@@ -44,3 +44,8 @@ async def health():
     """Проверка доступности Matching Service."""
     return {"status": "ok", "service": "matching"}
 
+
+from observability import setup_observability  # noqa: E402
+
+setup_observability(app, "matching")
+

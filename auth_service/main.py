@@ -85,3 +85,8 @@ app.include_router(profile_router.router)
 async def health():
     """Проверка доступности сервиса."""
     return {"status": "ok", "service": "auth"}
+
+
+from observability import setup_observability  # noqa: E402
+
+setup_observability(app, "auth")

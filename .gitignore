@@ -12,3 +12,7 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 
+## Docker bind-mount JSON logs (NDJSON + ротация)
+logs/**/*.jsonl
+logs/**/*.jsonl.*
+

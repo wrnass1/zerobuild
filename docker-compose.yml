@@ -1,6 +1,10 @@
 # Запуск всех сервисов + Gateway
 # Общий секрет JWT: PLATFORM_JWT_SECRET (должен совпадать у auth, idea, kanban, matching)
 # Gateway:         http://localhost:8080 (единая точка входа: /api/auth, /api/ideas, /api/kanban, /api/match)
+# Prometheus:      http://localhost:9090  (метрики /metrics со всех сервисов)
+# Grafana:         http://localhost:3000  (логин/пароль по умолчанию admin / admin)
+# Логи JSON (NDJSON): LOG_FILE=/app/logs/app.jsonl + том ./logs/<сервис>:/app/logs
+# Опционально: LOG_FILE_MAX_BYTES, LOG_FILE_BACKUP_COUNT, SENTRY_DSN, LOG_JSON, PROMETHEUS_ENABLED
 # Auth Swagger:    http://localhost:8000/docs
 # Matching Swagger: http://localhost:8001/docs
 # Ideas Swagger:   http://localhost:8002/docs
@@ -29,6 +33,9 @@ services:
     environment:
       AUTH_DATABASE_URL: postgresql+asyncpg://postgres:postgres@auth-db:5432/auth_db
       AUTH_SECRET_KEY: ${PLATFORM_JWT_SECRET:-your-secret-key-change-in-production}
+      LOG_FILE: /app/logs/app.jsonl
+    volumes:
+      - ./logs/auth:/app/logs
     depends_on:
       auth-db:
         condition: service_healthy
@@ -41,6 +48,9 @@ services:
       MATCH_AUTH_URL: http://auth-service:8000
       MATCH_IDEAS_URL: http://idea-service:8002
       MATCH_JWT_SECRET_KEY: ${PLATFORM_JWT_SECRET:-your-secret-key-change-in-production}
+      LOG_FILE: /app/logs/app.jsonl
+    volumes:
+      - ./logs/matching:/app/logs
     depends_on:
       auth-service:
         condition: service_started
@@ -70,6 +80,9 @@ services:
     environment:
       IDEA_DATABASE_URL: postgresql+asyncpg://postgres:postgres@idea-db:5432/idea_db
       IDEA_JWT_SECRET_KEY: ${PLATFORM_JWT_SECRET:-your-secret-key-change-in-production}
+      LOG_FILE: /app/logs/app.jsonl
+    volumes:
+      - ./logs/idea:/app/logs
     depends_on:
       idea-db:
         condition: service_healthy
@@ -98,6 +111,9 @@ services:
       KANBAN_DATABASE_URL: postgresql+asyncpg://postgres:postgres@kanban-db:5432/kanban_db
       KANBAN_IDEA_SERVICE_URL: http://idea-service:8002
       KANBAN_JWT_SECRET_KEY: ${PLATFORM_JWT_SECRET:-your-secret-key-change-in-production}
+      LOG_FILE: /app/logs/app.jsonl
+    volumes:
+      - ./logs/kanban:/app/logs
     depends_on:
       kanban-db:
         condition: service_healthy
@@ -113,13 +129,44 @@ services:
       GATEWAY_IDEAS_URL: http://idea-service:8002
       GATEWAY_KANBAN_URL: http://kanban-service:8003
       GATEWAY_MATCHING_URL: http://matching-service:8001
+      LOG_FILE: /app/logs/app.jsonl
+    volumes:
+      - ./logs/gateway:/app/logs
     depends_on:
       - auth-service
       - idea-service
       - kanban-service
       - matching-service
 
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prom_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.enable-lifecycle"
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_DEFAULT_THEME: dark
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+
 volumes:
   auth_pg_data:
   idea_pg_data:
   kanban_pg_data:
+  prom_data:
+  grafana_data:
